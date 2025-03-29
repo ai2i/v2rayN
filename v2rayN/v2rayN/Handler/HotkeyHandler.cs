@@ -1,11 +1,9 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
-using v2rayN.Mode;
-using v2rayN.Resx;
 
 namespace v2rayN.Handler
 {
@@ -13,15 +11,8 @@ namespace v2rayN.Handler
     {
         private static readonly Lazy<HotkeyHandler> _instance = new(() => new());
         public static HotkeyHandler Instance = _instance.Value;
-
         private const int WmHotkey = 0x0312;
-
-        private Config _config
-        {
-            get => LazyConfig.Instance.GetConfig();
-        }
-
-        private Dictionary<int, List<EGlobalHotkey>> _hotkeyTriggerDic;
+        private readonly Dictionary<int, List<EGlobalHotkey>> _hotkeyTriggerDic = new();
 
         public bool IsPause { get; set; } = false;
 
@@ -31,7 +22,6 @@ namespace v2rayN.Handler
 
         public HotkeyHandler()
         {
-            _hotkeyTriggerDic = new();
             ComponentDispatcher.ThreadPreprocessMessage += OnThreadPreProcessMessage;
             Init();
         }
@@ -39,25 +29,38 @@ namespace v2rayN.Handler
         private void Init()
         {
             _hotkeyTriggerDic.Clear();
-            if (_config.globalHotkeys == null) return;
-            foreach (var item in _config.globalHotkeys)
+            foreach (var item in AppHandler.Instance.Config.GlobalHotkeys)
             {
-                if (item.KeyCode != null && item.KeyCode != Key.None)
+                if (item.KeyCode != null && (Key)item.KeyCode != Key.None)
                 {
-                    int key = KeyInterop.VirtualKeyFromKey((Key)item.KeyCode);
-                    KeyModifiers modifiers = KeyModifiers.None;
-                    if (item.Control) modifiers |= KeyModifiers.Ctrl;
-                    if (item.Shift) modifiers |= KeyModifiers.Shift;
-                    if (item.Alt) modifiers |= KeyModifiers.Alt;
+                    var key = KeyInterop.VirtualKeyFromKey((Key)item.KeyCode);
+                    var modifiers = KeyModifiers.None;
+                    if (item.Control)
+                    {
+                        modifiers |= KeyModifiers.Ctrl;
+                    }
+
+                    if (item.Shift)
+                    {
+                        modifiers |= KeyModifiers.Shift;
+                    }
+
+                    if (item.Alt)
+                    {
+                        modifiers |= KeyModifiers.Alt;
+                    }
+
                     key = (key << 16) | (int)modifiers;
                     if (!_hotkeyTriggerDic.ContainsKey(key))
                     {
-                        _hotkeyTriggerDic.Add(key, new() { item.eGlobalHotkey });
+                        _hotkeyTriggerDic.Add(key, new() { item.EGlobalHotkey });
                     }
                     else
                     {
-                        if (!_hotkeyTriggerDic[key].Contains(item.eGlobalHotkey))
-                            _hotkeyTriggerDic[key].Add(item.eGlobalHotkey);
+                        if (!_hotkeyTriggerDic[key].Contains(item.EGlobalHotkey))
+                        {
+                            _hotkeyTriggerDic[key].Add(item.EGlobalHotkey);
+                        }
                     }
                 }
             }
@@ -68,10 +71,10 @@ namespace v2rayN.Handler
             foreach (var _hotkeyCode in _hotkeyTriggerDic.Keys)
             {
                 var hotkeyInfo = GetHotkeyInfo(_hotkeyCode);
-                bool isSuccess = false;
-                string msg;
+                var isSuccess = false;
+                var msg = string.Empty;
 
-                Application.Current.Dispatcher.Invoke(() =>
+                Application.Current?.Dispatcher.Invoke(() =>
                 {
                     isSuccess = RegisterHotKey(IntPtr.Zero, _hotkeyCode, hotkeyInfo.fsModifiers, hotkeyInfo.vKey);
                 });
@@ -95,7 +98,7 @@ namespace v2rayN.Handler
         {
             foreach (var hotkey in _hotkeyTriggerDic.Keys)
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                Application.Current?.Dispatcher.Invoke(() =>
                 {
                     UnregisterHotKey(IntPtr.Zero, hotkey);
                 });
@@ -104,26 +107,38 @@ namespace v2rayN.Handler
             Load();
         }
 
-        private (int fsModifiers, int vKey, string hotkeyStr, List<string> Names) GetHotkeyInfo(int hotkeycode)
+        private (int fsModifiers, int vKey, string hotkeyStr, List<string> Names) GetHotkeyInfo(int hotkeyCode)
         {
-            var _fsModifiers = hotkeycode & 0xffff;
-            var _vkey = (hotkeycode >> 16) & 0xffff;
-            var _hotkeyStr = new StringBuilder();
-            var _names = new List<string>();
+            var fsModifiers = hotkeyCode & 0xffff;
+            var vKey = (hotkeyCode >> 16) & 0xffff;
+            var hotkeyStr = new StringBuilder();
+            var names = new List<string>();
 
-            var mdif = (KeyModifiers)_fsModifiers;
-            var key = KeyInterop.KeyFromVirtualKey(_vkey);
-            if ((mdif & KeyModifiers.Ctrl) == KeyModifiers.Ctrl) _hotkeyStr.Append($"{KeyModifiers.Ctrl}+");
-            if ((mdif & KeyModifiers.Alt) == KeyModifiers.Alt) _hotkeyStr.Append($"{KeyModifiers.Alt}+");
-            if ((mdif & KeyModifiers.Shift) == KeyModifiers.Shift) _hotkeyStr.Append($"{KeyModifiers.Shift}+");
-            _hotkeyStr.Append(key.ToString());
-
-            foreach (var name in _hotkeyTriggerDic[hotkeycode])
+            var modify = (KeyModifiers)fsModifiers;
+            var key = KeyInterop.KeyFromVirtualKey(vKey);
+            if ((modify & KeyModifiers.Ctrl) == KeyModifiers.Ctrl)
             {
-                _names.Add(name.ToString());
+                hotkeyStr.Append($"{KeyModifiers.Ctrl}+");
             }
 
-            return (_fsModifiers, _vkey, _hotkeyStr.ToString(), _names);
+            if ((modify & KeyModifiers.Alt) == KeyModifiers.Alt)
+            {
+                hotkeyStr.Append($"{KeyModifiers.Alt}+");
+            }
+
+            if ((modify & KeyModifiers.Shift) == KeyModifiers.Shift)
+            {
+                hotkeyStr.Append($"{KeyModifiers.Shift}+");
+            }
+
+            hotkeyStr.Append(key.ToString());
+
+            foreach (var name in _hotkeyTriggerDic[hotkeyCode])
+            {
+                names.Add(name.ToString());
+            }
+
+            return (fsModifiers, vKey, hotkeyStr.ToString(), names);
         }
 
         private void OnThreadPreProcessMessage(ref MSG msg, ref bool handled)
@@ -133,21 +148,18 @@ namespace v2rayN.Handler
                 return;
             }
             handled = true;
-            var _hotKeyCode = (int)msg.lParam;
+            var hotKeyCode = (int)msg.lParam;
             if (IsPause)
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    UIElement? element = Keyboard.FocusedElement as UIElement;
-                    if (element != null)
+                    if (Keyboard.FocusedElement is UIElement element)
                     {
-                        var _keyEventArgs = new KeyEventArgs(Keyboard.PrimaryDevice,
-                            PresentationSource.FromVisual(element), 0,
-                            KeyInterop.KeyFromVirtualKey(GetHotkeyInfo(_hotKeyCode).vKey))
+                        var keyEventArgs = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(element), 0, KeyInterop.KeyFromVirtualKey(GetHotkeyInfo(hotKeyCode).vKey))
                         {
                             RoutedEvent = UIElement.KeyDownEvent
                         };
-                        element.RaiseEvent(_keyEventArgs);
+                        element.RaiseEvent(keyEventArgs);
                     }
                 });
             }
